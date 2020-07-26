@@ -62,13 +62,14 @@ def is_float_en(num_km: str):
 def is_integer_num(num_km: str):
     return ',' not in num_km
 
-def tel2word(tel: str):
+def digits2word(digits_km: str):
     result = []
-    for num in tel:
-        result.append(NUM[str(num)])
+    digits_en = km2en(digits_km)
+    for num in digits_en:
+        result.append(NUM[num])
     return ' '.join(result)
 
-def get_num_units(num_en: str, first_zero=False):
+def get_num_units(num_en: str, first_zeros=False):
     if num_en is None or num_en == '':
         return None, None
 
@@ -94,7 +95,7 @@ def get_num_units(num_en: str, first_zero=False):
             i += 1
             num = num // 10
         
-        if first_zero is True:
+        if first_zeros is True:
             match = re.match('^[0]+', num_en)
             if match is not None:
                 zeros = match.group(0)
@@ -109,17 +110,22 @@ def get_num_units(num_en: str, first_zero=False):
     
     return unit[::-1], unit_point   # number part need to be reversed
 
-def num2word_int(num_km: str, first_zero=False):
+def num2word_int(num_km: str, first_zeros=False):
     num_en = km2en(num_km)
     if num_en is None or num_en == '':
         return ''
+    
     if is_float_en(num_en):
         raise Exception('num_km must not be float: ', num_km)
     
     result = []
     
-    skip_unit = 0
-    num_units, _ = get_num_units(num_en, first_zero)
+    if first_zeros is False and len(num_km) != 1:
+        num_km = re.sub(r'^[០]+', '', num_km)
+        num_en = re.sub(r'^[0]+', '', num_en)
+    
+    skip_unit = 0   # to skip number e.g. 10000000 -> មួយ លាន 
+    num_units, _ = get_num_units(num_en, first_zeros)
     for idx, value in enumerate(num_units):
         if skip_unit > 0:
             skip_unit -= 1
@@ -127,52 +133,63 @@ def num2word_int(num_km: str, first_zero=False):
 
         nums = num_units[idx:]
         if len(nums) == 1:
+            # basic digit
             result.append(NUM[str(value)])
         elif nums == [0] * len(nums):
+            # if sub number is 00000 stop as the previous step already converted the number
             break
         elif len(nums) == 2:
             num_str = ''.join([str(n) for n in nums])
-            if first_zero is False:
-                num_str = re.sub(r'^[0]+', '', num_str)     # remove first zero
+            if num_str[0] == '0':
+                # first zero
+                num = NUM.get(str(value))
+                result.append(num)
+                continue
             else:
-                if num_str[0] == '0':
-                    result.append(NUM['0'])
-                    num_str = num_str[1:]
-                    
-            if NUM.get(num_str) is not None:
-                result.append(NUM[num_str])
-                break
-            else:
-                num_value = NUM_TY[str(value) + '0']
-                result.append(num_value)
-                # NUM_TY                
-                if num_en[1] == '0':
+                # get number from NUM and NUM_TY
+                num = NUM.get(num_str)
+                if num is None:
+                    num = NUM_TY.get(num_str)
+            
+                if num is not None:
+                    result.append(num)
                     break
+                else:
+                    # if not exists split the ty number: 25 -> 20, 5 will be converted next step
+                    num_value = NUM_TY[str(value) + '0']
+                    result.append(num_value)
         else:
+            # get number from NUM_UNIT in form of 10^n
             num_unit = NUM_UNIT.get(str(pow(10, len(num_units) - idx - 1)))
             if num_unit is None:
                 sub_num = [str(value)]
-                for sub_idx, sub_num_value in enumerate(nums[1:]):
-                    num_unit = NUM_UNIT.get(str(pow(10, len(num_units) - idx - sub_idx - 1)))
-                    if num_unit is not None:
+                for sub_idx, sub_value in enumerate(nums[1:]):
+                    sub_num_unit = NUM_UNIT.get(str(pow(10, len(num_units) - idx - sub_idx - 1)))
+                    if sub_num_unit is not None:
                         num_value = num2word(num_km[:len(sub_num)])
-                        result.append('%s %s' % (num_value, num_unit))
+                        result.append('%s %s' % (num_value, sub_num_unit))
 
-                        skip_unit = len(sub_num) - 1
-                        break
+                        if first_zeros is False:
+                            # define number of zero to be skipped. e.g. 20012 -> 00
+                            match = re.match('^[0]+', num_en[sub_idx:])
+                            if match is not None:
+                                zeros = match.group(0)
+                                skip_unit = len(zeros)
+                                
+                        break                            
                     else:
-                        sub_num.append(str(sub_num_value))
+                        sub_num.append(str(sub_value))
             else:
                 num_value = NUM[str(value)]
-                
-                # zero part
-                sub_num_value = num_en[idx+1:]
-                match = re.match('^[0]+', sub_num_value)
-                if match is not None:
-                    zeros = match.group(0)
-                    skip_unit = len(zeros)
-                
                 result.append('%s_%s' % (num_value, num_unit))
+                
+                if first_zeros is False:
+                    # define number of zero to be skipped. e.g. 20012 -> 00
+                    sub_value = num_en[idx + 1:]
+                    match = re.match('^[0]+', sub_value)
+                    if match is not None:
+                        zeros = match.group(0)
+                        skip_unit = len(zeros)
 
     return ' '.join(result)
 
@@ -185,12 +202,12 @@ def num2word(num_km):
     if is_float_km(num_km):
         parts = num_km.split(',')
         decimal = num2word_int(parts[0])
-        point = num2word_int(parts[1], first_zero=True)
+        point = num2word_int(parts[1], first_zeros=True)
         
         return '%s %s %s' % (decimal, COMMON['FLOAT_POINT_W'], point)
     else:
         return num2word_int(num_km)
-      
+
 def date2word(date_km: str):
     if date_km is None or date_km == '':
         return ''
@@ -200,7 +217,7 @@ def date2word(date_km: str):
         parts = date_km.split('-')
     
     if len(parts) != 3:
-        raise Exception('invalid km date: ', date_km)
+        raise Exception('invalid km date dd/mm/yy or dd-mm-yyyy: ', date_km)
     
     day = num2word(parts[0])
     month = MONTH.get(km2en(parts[1]))
@@ -259,7 +276,7 @@ def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
         if sign.strip() != '':
             num += ' ' + sign
 
-        text = replace(text, num_en, num)        
+        text = re.sub(r' %s ' % num_en, ' %s ' % num, text)        
     
     # km num
     num_kms = re.findall(NUM_KM_REGX, text)
@@ -272,8 +289,8 @@ def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
             num = num.replace('_', ' ')
         if sign.strip() != '':
             num += ' ' + sign
-        
-        text = replace(text, num_km, num)
+
+        text = re.sub(r' %s ' % num_km, ' %s ' % num, text)
     
     # km date
     date_kms = re.findall(DATE_KM_REGX, text)
@@ -289,11 +306,3 @@ def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
     text = re.sub(r"\s+", " ", text).strip()
     
     return text
-
-def replace(string, old_value, new_value):
-    return re.sub(r' %s ' % old_value, ' %s ' % new_value, string)
-
-
-if __name__ == '__main__':
-    print(num2word('២០'))
-    # print(normalize('ធ្វើ_ឡើង មុន ថ្ងៃ_ទី ១២ សីហា គឺ មុន_ពេល សហ^ភាព អឺរ៉ុប សម្រេច ដក_ហូត ការ~អនុគ្រោះ ពន្ធ EBA ចំនួន ២០ % ពី កម្ពុជា ។'))
