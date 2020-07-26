@@ -255,6 +255,12 @@ ESP_CHAR = {
     ')': '',
 }
 
+def remove_words_w_bracket(text):
+    return re.sub(r'\(.*\)', '', text)
+
+def remove_url(text):
+    return re.sub(r'https?:\/\/.*[\r\n]*', '', text)
+
 def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
     # abbreviation
     for k, v in ABBRE.items():
@@ -299,9 +305,10 @@ def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
         text = text.replace(date_km, date)
     
     # special characters
-    for k, v in esp_char.items():
-        text.replace(k, v)
-    
+    if esp_char is not None:
+        for k, v in esp_char.items():
+            text = text.replace(k, v)
+        
     # remove duplicate whitespaces
     text = re.sub(r"\s+", " ", text).strip()
     

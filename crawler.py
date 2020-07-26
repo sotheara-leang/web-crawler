@@ -149,7 +149,7 @@ modules = {
     # 'krt': 'https://www.rfa.org/khmer/news/krt/story_archive',
     # 'politics': 'https://www.rfa.org/khmer/news/politics/story_archive'
     # 'analysis': 'https://www.rfa.org/khmer/news/analysis/story_archive'
-    'land': 'https://www.rfa.org/khmer/news/land/story_archive'
+    # 'land': 'https://www.rfa.org/khmer/news/land/story_archive'
 }
 
 out_dir         = 'work/raw/rfa'
