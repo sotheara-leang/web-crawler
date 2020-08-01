@@ -25,15 +25,20 @@ def en2km(num_en: str):
 
     result = ''
     for c in num_en:
-        if ord(c) < 48 or ord(c) > 57 and c != '.' and c != ',':
+        if 48 > ord(c) > 57 and c != '.' and c != ',' and c != '-' and c != '+':
             raise Exception('Invalid en number: ', num_en)
         if c == '.':
             result += ','
         elif c == ',':
-            # result += ','
             continue
+        elif c == '+' or c == '-':
+            result += c 
         else:
-            result += chr(ord(c) - 6064)
+            try:
+                result += chr(ord(c) + 6064)
+            except Exception as e:
+                print('Error convert num: ', num_en)
+                raise e
     return result
 
 def km2en(num_km: str):
@@ -42,15 +47,20 @@ def km2en(num_km: str):
     
     result = ''
     for c in num_km:
-        if ord(c) < 6112 or ord(c) > 6121 and c != ',' and c != '.':
+        if 6112 > ord(c) > 6121 and c != ',' and c != '.' and c != '-' and c != '+':
             raise Exception('Invalid km number: ', num_km)
         if c == ',':
             result += '.'
         elif c == '.':
-            # result += ','
             continue
+        elif c == '+' or c == '-':
+            result += c   
         else:
-            result += chr(ord(c) - 6064)
+            try:
+                result += chr(ord(c) - 6064)
+            except Exception as e:
+                print('Error convert num: ', num_km)
+                raise e
     return result
 
 def is_float_km(num_km: str):
@@ -111,87 +121,94 @@ def get_num_units(num_en: str, first_zeros=False):
     return unit[::-1], unit_point   # number part need to be reversed
 
 def num2word_int(num_km: str, first_zeros=False):
-    num_en = km2en(num_km)
-    if num_en is None or num_en == '':
-        return ''
+    try:
+        num_en = km2en(num_km)
+        if num_en is None or num_en == '':
+            return ''
+        
+        if is_float_en(num_en):
+            raise Exception('num_km must not be float: ', num_km)
+        
+        result = []
     
-    if is_float_en(num_en):
-        raise Exception('num_km must not be float: ', num_km)
-    
-    result = []
-    
-    if first_zeros is False and len(num_km) != 1:
-        num_km = re.sub(r'^[០]+', '', num_km)
-        num_en = re.sub(r'^[0]+', '', num_en)
-    
-    skip_unit = 0   # to skip number e.g. 10000000 -> មួយ លាន 
-    num_units, _ = get_num_units(num_en, first_zeros)
-    for idx, value in enumerate(num_units):
-        if skip_unit > 0:
-            skip_unit -= 1
-            continue
-
-        nums = num_units[idx:]
-        if len(nums) == 1:
-            # basic digit
-            result.append(NUM[str(value)])
-        elif nums == [0] * len(nums):
-            # if sub number is 00000 stop as the previous step already converted the number
-            break
-        elif len(nums) == 2:
-            num_str = ''.join([str(n) for n in nums])
-            if num_str[0] == '0':
-                # first zero
-                num = NUM.get(str(value))
-                result.append(num)
-                continue
-            else:
-                # get number from NUM and NUM_TY
-                num = NUM.get(num_str)
-                if num is None:
-                    num = NUM_TY.get(num_str)
+        # sign number
+        if num_en[0] == '+' or num_en[0] == '-':
+            result.append(NUM_COMMON[num_en[0]])
             
-                if num is not None:
+            num_en = num_en[1:]
+            num_km = num_km[1:]
+        
+        skip_unit = 0   # to skip number e.g. 1000000 -> 000000 
+        num_units, _ = get_num_units(num_en, first_zeros)
+        for idx, value in enumerate(num_units):
+            if skip_unit > 0:
+                skip_unit -= 1
+                continue
+    
+            nums = num_units[idx:]
+            if len(nums) == 1:
+                # basic digit
+                result.append(NUM[str(value)])
+            elif nums == [0] * len(nums):
+                # if sub number is 00000 stop as the previous step already converted the number
+                break
+            elif len(nums) == 2:
+                num_str = ''.join([str(n) for n in nums])
+                if num_str[0] == '0':
+                    # first zero
+                    num = NUM.get(str(value))
                     result.append(num)
-                    break
+                    continue
                 else:
-                    # if not exists split the ty number: 25 -> 20, 5 will be converted next step
-                    num_value = NUM_TY[str(value) + '0']
-                    result.append(num_value)
-        else:
-            # get number from NUM_UNIT in form of 10^n
-            num_unit = NUM_UNIT.get(str(pow(10, len(num_units) - idx - 1)))
-            if num_unit is None:
-                sub_num = [str(value)]
-                for sub_idx, sub_value in enumerate(nums[1:]):
-                    sub_num_unit = NUM_UNIT.get(str(pow(10, len(num_units) - idx - sub_idx - 1)))
-                    if sub_num_unit is not None:
-                        num_value = num2word(num_km[:len(sub_num)])
-                        result.append('%s %s' % (num_value, sub_num_unit))
-
-                        if first_zeros is False:
-                            # define number of zero to be skipped. e.g. 20012 -> 00
-                            match = re.match('^[0]+', num_en[sub_idx:])
-                            if match is not None:
-                                zeros = match.group(0)
-                                skip_unit = len(zeros)
-                                
-                        break                            
-                    else:
-                        sub_num.append(str(sub_value))
-            else:
-                num_value = NUM[str(value)]
-                result.append('%s_%s' % (num_value, num_unit))
+                    # get number from NUM and NUM_TY
+                    num = NUM.get(num_str)
+                    if num is None:
+                        num = NUM_TY.get(num_str)
                 
-                if first_zeros is False:
-                    # define number of zero to be skipped. e.g. 20012 -> 00
-                    sub_value = num_en[idx + 1:]
-                    match = re.match('^[0]+', sub_value)
-                    if match is not None:
-                        zeros = match.group(0)
-                        skip_unit = len(zeros)
-
-    return ' '.join(result)
+                    if num is not None:
+                        result.append(num)
+                        break
+                    else:
+                        # if not exists split the ty number: 25 -> 20, 5 will be converted next step
+                        num_value = NUM_TY[str(value) + '0']
+                        result.append(num_value)
+            else:
+                # get number from NUM_UNIT in form of 10^n
+                num_unit = NUM_UNIT.get(str(pow(10, len(num_units) - idx - 1)))
+                if num_unit is None:
+                    sub_num = [str(value)]
+                    for sub_idx, sub_value in enumerate(nums[1:]):
+                        sub_num_unit = NUM_UNIT.get(str(pow(10, len(nums) - sub_idx - 1)))
+                        if sub_num_unit is not None:
+                            num_value = num2word(num_km[:len(sub_num)])
+                            result.append('%s %s' % (num_value, sub_num_unit))
+    
+                            if first_zeros is False:
+                                # define number of zero to be skipped. e.g. 100000000 -> 0000000 
+                                match = re.match('^[0]+', num_en[sub_idx:])
+                                if match is not None:
+                                    zeros = match.group(0)
+                                    skip_unit = len(zeros) + len(sub_num) - 1
+                        
+                            break                            
+                        else:
+                            sub_num.append(str(sub_value))
+                else:
+                    num_value = NUM[str(value)]
+                    result.append('%s_%s' % (num_value, num_unit))
+                    
+                    if first_zeros is False:
+                        # define number of zero to be skipped. e.g. 20012 -> 00
+                        sub_value = num_en[idx + 1:]
+                        match = re.match('^[0]+', sub_value)
+                        if match is not None:
+                            zeros = match.group(0)
+                            skip_unit = len(zeros)
+    
+        return ' '.join(result)
+    except Exception as e:
+        print(e)
+        raise e
 
 def num2word(num_km):
     if num_km is None or num_km == '':
@@ -209,6 +226,7 @@ def num2word(num_km):
         return num2word_int(num_km)
 
 def date2word(date_km: str):
+    """" dd/mm/yyyy, dd-mm-yyyy """
     if date_km is None or date_km == '':
         return ''
     
@@ -229,11 +247,35 @@ def date2word(date_km: str):
     
     return '%s %s %s' % (day, month, year)
 
+def time2word(time_km: str, show_hour_title=True):
+    """" hh:mm:ss """
+    if time_km is None or time_km == '':
+        return ''
+
+    parts = time_km.split(':')
+    if len(parts) > 3:
+        raise Exception('invalid km time hh:mm:ss: ', time_km)
+    
+    # hour
+    result = num2word(parts[0])
+    if show_hour_title is True:
+        result = COMMON['TIME_HH'] + ' ' + result
+        
+    if len(parts) >= 2:
+        mm = num2word(parts[1])
+        result += ' %s %s' % (mm, COMMON['TIME_MN'])
+    if len(parts) >= 3:
+        ss = num2word(parts[2])
+        result += ' %s %s' % (ss, COMMON['TIME_SS'])
+        
+    return result
+    
 #############
 
 NUM_EN_REGX     = r'(([0-9]+([.,][0-9]+)?)(\s+%)?)'
 NUM_KM_REGX     = r'(([០-៩]+([.,][០-៩]+)?)(\s+%)?)'
 DATE_KM_REGX    = r'([០-៩]+[-\/][០-៩]+[-\/][០-៩]+)'
+TIME_KM_REGX    = r'((%s )?[០-៩]{1,2}:[០-៩]{1,2}(:[០-៩]{1,2})?)' % COMMON['TIME_HH']
 LEK_TO_REGX     = r'(([\u1780-\u17e9]+) ៗ)'
 
 ESP_CHAR = {
@@ -270,9 +312,26 @@ def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
     if clean_lek_to is True:
         lek_tos = re.findall(LEK_TO_REGX, text)
         for lek_to, word in lek_tos:
-            text = text.replace(lek_to, '%s %s' % (word, word))
+            text = text.replace(lek_to, ' %s %s ' % (word, word), 1)
 
-    # en num
+    # km date
+    date_kms = re.findall(DATE_KM_REGX, text)
+    for date_km in date_kms:
+        date = date2word(date_km)
+        text = text.replace(date_km, ' %s ' % date, 1)
+
+    # km time
+    time_kms = re.findall(TIME_KM_REGX, text)
+    for time_km, _, _ in time_kms:
+        if time_km.startswith(COMMON['TIME_HH']):
+            time = time_km.replace(COMMON['TIME_HH'], '').strip()
+            time = time2word(time)
+        else:
+            time = time2word(time_km)
+    
+        text = text.replace(time_km, ' %s ' % time, 1)
+
+    # convert en num to km num
     num_ens = re.findall(NUM_EN_REGX, text)
     for num_en, num, _, sign in num_ens:
         for k, v in NUM_COMMON.items():
@@ -281,8 +340,8 @@ def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
         num = en2km(num)
         if sign.strip() != '':
             num += ' ' + sign
-
-        text = re.sub(r' %s ' % num_en, ' %s ' % num, text)        
+        
+        text = text.replace(num_en, ' %s ' % num, 1)        
     
     # km num
     num_kms = re.findall(NUM_KM_REGX, text)
@@ -296,14 +355,8 @@ def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
         if sign.strip() != '':
             num += ' ' + sign
 
-        text = re.sub(r' %s ' % num_km, ' %s ' % num, text)
-    
-    # km date
-    date_kms = re.findall(DATE_KM_REGX, text)
-    for date_km in date_kms:
-        date = date2word(date_km)
-        text = text.replace(date_km, date)
-    
+        text = text.replace(num_km, ' %s ' % num, 1)
+
     # special characters
     if esp_char is not None:
         for k, v in esp_char.items():
