@@ -1,7 +1,12 @@
+import os
 import re
 import configparser
+from collections import Counter
+from operator import itemgetter
 
-#############
+from tqdm import tqdm
+
+############# SETTING #############
 
 config = configparser.ConfigParser()
 config.read('km.ini')
@@ -15,7 +20,7 @@ MONTH       = config['MONTH']
 DIGIT       = config['DIGIT']
 NUM_COMMON  = config['NUM_COMMON']
 
-#############
+############# NUMBER #############
 
 # 0: 6112: 48, ៩: 6121: 57
 
@@ -270,29 +275,32 @@ def time2word(time_km: str, show_hour_title=True):
         
     return result
     
-#############
+############# TEXT #############
 
 NUM_EN_REGX     = r'(([0-9]+([.,][0-9]+)?)(\s+%)?)'
 NUM_KM_REGX     = r'(([០-៩]+([.,][០-៩]+)?)(\s+%)?)'
 DATE_KM_REGX    = r'([០-៩]+[-\/][០-៩]+[-\/][០-៩]+)'
 TIME_KM_REGX    = r'((%s )?[០-៩]{1,2}:[០-៩]{1,2}(:[០-៩]{1,2})?)' % COMMON['TIME_HH']
-LEK_TO_REGX     = r'(([\u1780-\u17e9]+) ៗ)'
+LEK_TO_REGX     = r'(([\u1780-\u17e9]+) ?ៗ)'
 
 ESP_CHAR = {
     '«': '',
     '»': '',
     '៖': '',
     '”': '',
+    '``': '',
     '"': '',
     "'": '',
     '!': '',
     '+': '',
     '-': '',
+    '–': '',
     ' _ ': '',
     ':': '',
     ',': '',
     'ˉ': '',
     '.': '',
+    '·': '',
     '(': '',
     ')': '',
     ';': '',
@@ -302,12 +310,28 @@ ESP_CHAR = {
     ']': '',
     '>>': '',
     '<<': '',
+    '<': '',
+    '>': '',
+    '=': '',
+    '&': '',
+    '%': '',
     '៚': '',
     '“': '',
     '…': '',
     '↘️': '',
-    '✔': ''
+    '✔': '',
+    '@': '',
+    'ៗ': '',
+    '’': '',
+    '#': ''
 }
+
+def clean_hidden_chars(text=''):
+    return ''.join(c for c in text if c.isprintable())
+
+def filter_word_tags(text=''):
+    text = text.replace('_', ' ').replace('~', ' ').replace('^', ' ')
+    return text
 
 def remove_words_w_bracket(text):
     return re.sub(r'\(.*\)', '', text)
@@ -316,6 +340,9 @@ def remove_url(text):
     return re.sub(r'https?:\/\/.*[\r\n]*', '', text)
 
 def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
+    # clean
+    text = clean_hidden_chars(text)
+    
     # abbreviation
     for k, v in ABBRE.items():
         text = text.replace(k, v)
@@ -325,7 +352,7 @@ def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
         lek_tos = re.findall(LEK_TO_REGX, text)
         for lek_to, word in lek_tos:
             text = text.replace(lek_to, ' %s %s ' % (word, word), 1)
-
+            
     # km date
     date_kms = re.findall(DATE_KM_REGX, text)
     for date_km in date_kms:
@@ -353,19 +380,25 @@ def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
         if sign.strip() != '':
             num += ' ' + sign
         
-        text = text.replace(num_en, ' %s ' % num, 1)        
+        text = text.replace(num_en, ' %s ' % num, 1)
     
     # km num
     num_kms = re.findall(NUM_KM_REGX, text)
     for num_km, num, _, sign in num_kms:
-        for k, v in NUM_COMMON.items():
-            sign = sign.replace(k, v)
-
-        num = num2word(num)
-        if clean_num is True:
-            num = num.replace('_', ' ')
-        if sign.strip() != '':
-            num += ' ' + sign
+        # phone number
+        pre_text = text[:text.index(num_km)]
+        parts = pre_text.split()
+        if ' '.join(parts[-2:]) == COMMON['TEL_PRE']:
+            num = digits2word(num_km)
+        else:
+            for k, v in NUM_COMMON.items():
+                sign = sign.replace(k, v)
+    
+            num = num2word(num)
+            if clean_num is True:
+                num = num.replace('_', ' ')
+            if sign.strip() != '':
+                num += ' ' + sign
 
         text = text.replace(num_km, ' %s ' % num, 1)
 
@@ -378,3 +411,163 @@ def normalize(text, esp_char=ESP_CHAR, clean_num=True, clean_lek_to=True):
     text = re.sub(r"\s+", " ", text).strip()
     
     return text
+
+def generate_vocab(corpus_file, vocab_file, vocab_filter=[]):
+    vocab_counter = Counter()
+    print('Read corpus %s' % corpus_file)
+    with open(corpus_file, 'r', encoding='utf-8') as reader:
+        for line in tqdm(reader):
+            if line == '':
+                continue
+
+            # vocab
+            word_map = {}
+            for word in line.split():
+                num = word_map.get(word)
+                if num is None:
+                    word_map[word] = 1
+                else:
+                    word_map[word] = num + 1
+
+            vocab_counter.update(word_map)
+
+    # write vocab
+    print('Write vocab %s ' % vocab_file)
+    with open(vocab_file, 'w') as writer:
+        lexicon = sorted(vocab_counter.items(), key=itemgetter(0))
+        for word, n in lexicon:
+            skip_word = False
+
+            # filters
+            for pattern in vocab_filter:
+                if re.search(pattern, word):
+                    skip_word = True
+                    break
+
+            if skip_word is True:
+                continue
+
+            writer.write('%s\n' % word)
+
+def merge_corpus(corpus_dir, output_dir, text_filter=None, vocab_filter=[]):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    vocab_counter = Counter()
+
+    sents = []
+    for corpus in os.listdir(corpus_dir):
+        corpus_file = os.path.join(corpus_dir, corpus)
+        if os.path.isdir(corpus_file) or corpus.startswith('.'):
+            continue
+            
+        print('Processing %s...' % corpus_file)
+
+        with open(corpus_file, 'r', encoding='utf-8') as reader:
+            for line in tqdm(reader):
+                if line == '':
+                    continue
+                
+                if text_filter is not None:
+                    line = text_filter(line)
+                    
+                sents.append(line)
+
+                # vocab
+                word_map = {}
+                for word in line.split():
+                    num = word_map.get(word)
+                    if num is None:
+                        word_map[word] = 1
+                    else:
+                        word_map[word] = num + 1
+
+                vocab_counter.update(word_map)
+
+    # write corpus
+    final_corpus_file = os.path.join(output_dir, 'corpus.txt')
+    print('Write corpus %s ' % final_corpus_file)
+    with open(final_corpus_file, 'w', encoding='utf-8') as writer:
+        sents = set(sents)
+        sents = list(sents)
+        sents.sort()
+
+        for line in sents:
+            line = line.strip()
+            if len(line) == 0:
+                continue
+
+            writer.write('%s\n' % line)
+    
+    # write vocab
+    vocab_file = os.path.join(output_dir, 'corpus.vocab')
+    print('Write vocab %s ' % vocab_file)
+    with open(vocab_file, 'w') as writer:
+        lexicon = sorted(vocab_counter.items(), key=itemgetter(0))
+        for word, n in lexicon:
+            skip_word = False
+            
+            # filters
+            for pattern in vocab_filter:
+                if re.search(pattern, word):
+                    skip_word = True
+                    break
+            
+            if skip_word is True:
+                continue
+                
+            writer.write('%s\n' % word)
+
+def correct_words(file_in, file_out, word_to_correct_file):
+    print('Read %s ....' % word_to_correct_file)
+    word_map = {}
+    with open(word_to_correct_file, 'r') as reader:
+        for line in reader:
+            if line.startswith('#'):
+                continue
+
+            lines = line.split(',')
+            word_map[lines[0]] = lines[1].strip()
+
+    lines = []
+    with open(file_in, 'r') as reader:
+        for line in reader:
+            for k, v in word_map.items():
+                line = line.strip()
+                line = line.replace(k, v)
+
+            lines.append(line)
+
+    with open(file_out, 'w') as writer:
+        for line in lines:
+            writer.write('%s\n' % line)
+
+def extract_lek_to(corpus_dir, file_out):
+    LEK_TO_TAG = re.compile('([\u1780-\u17e9]+) ([\u1780-\u17e9]+) ៗ')
+    
+    records = []
+
+    for module_name in os.listdir(corpus_dir):
+        if module_name.startswith('.'):
+            continue
+
+        module_dir = os.path.join(corpus_dir, module_name)
+        if not os.path.isdir(module_dir):
+            continue
+
+        print('Processing %s ...' % module_name)
+
+        articles_file = '%s/articles.txt' % module_dir
+        with open(articles_file, 'r', encoding='utf-8') as reader:
+            for line in reader:
+                search = LEK_TO_TAG.search(line)
+                if search is not None:
+                    data = search.group()
+                    records.append(data)
+
+    with open(file_out, 'w', encoding='utf-8') as writer:
+        records = set(records)
+        records = list(records)
+        records.sort()
+        for record in records:
+            writer.write('%s\n' % record)
