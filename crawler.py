@@ -32,10 +32,16 @@ def extract_article(article_link):
         return
 
     soup = BeautifulSoup(page.content, 'html.parser')
+    
+    title = soup.select('div#storypagemaincol h1')[0].text
 
-    title = soup.title.text
-    content = soup.select('div#storytext')[0].text
-    article = Article(title, content, article_link, soup)
+    contents = []
+    for p in soup.select('div#storytext p'):
+        if p.string is None:
+            continue
+        contents.append(p.string)
+    
+    article = Article(title, ' '.join(contents), article_link, soup)
 
     return article
 
@@ -126,6 +132,9 @@ def run():
                 break
                 
             articles, next_url = extract_articles_in_page(url)
+            if len(articles) == 0:
+                break
+                
             for article in articles:
                 save_article(article, module_dir)
                 
@@ -139,20 +148,20 @@ def run():
 #####################
 
 modules = {
-    # 'social-economy': 'https://www.rfa.org/khmer/news/social-economy/story_archive',
-    # 'economy': 'https://www.rfa.org/khmer/news/economy/story_archive',
-    # 'human-rights': 'https://www.rfa.org/khmer/news/human-rights/story_archive',
-    # 'environment': 'https://www.rfa.org/khmer/news/environment',
-    # 'health': 'https://www.rfa.org/khmer/news/health',
-    # 'history': 'https://www.rfa.org/khmer/news/history/story_archive',
-    # 'law': 'https://www.rfa.org/khmer/news/law/story_archive',
-    # 'krt': 'https://www.rfa.org/khmer/news/krt/story_archive',
-    # 'politics': 'https://www.rfa.org/khmer/news/politics/story_archive'
-    # 'analysis': 'https://www.rfa.org/khmer/news/analysis/story_archive'
-    # 'land': 'https://www.rfa.org/khmer/news/land/story_archive'
+    'social-economy': 'https://www.rfa.org/khmer/news/social-economy/story_archive',
+    'economy': 'https://www.rfa.org/khmer/news/economy/story_archive',
+    'human-rights': 'https://www.rfa.org/khmer/news/human-rights/story_archive',
+    'environment': 'https://www.rfa.org/khmer/news/environment',
+    'health': 'https://www.rfa.org/khmer/news/health',
+    'history': 'https://www.rfa.org/khmer/news/history/story_archive',
+    'law': 'https://www.rfa.org/khmer/news/law/story_archive',
+    'krt': 'https://www.rfa.org/khmer/news/krt/story_archive',
+    'politics': 'https://www.rfa.org/khmer/news/politics/story_archive',
+    'analysis': 'https://www.rfa.org/khmer/news/analysis/story_archive',
+    'land': 'https://www.rfa.org/khmer/news/land/story_archive'
 }
 
-out_dir         = 'work/raw/rfa'
+out_dir         = 'work/text/raw/rfa'
 total_articles  = -1
 line_break      = ' '
 link_map        = {}
