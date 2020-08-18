@@ -3,6 +3,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from dataclasses import dataclass
+import pytube
 
 CONT_SEP = '|@@@|'
 
@@ -11,7 +12,7 @@ class Article:
     title: str
     content: str
     link: str
-    audio_link: str
+    video_link: str
     soup: any
 
 def clean_article(article):
@@ -34,21 +35,29 @@ def extract_article(article_link):
 
     soup = BeautifulSoup(page.content, 'html.parser')
     
-    audio = soup.select('audio.story_audio')
-    if audio is None or len(audio) == 0:
+    video = soup.select('div.wpb_video_wrapper iframe#td_youtube_player')
+    if video is None or len(video) == 0:
         return None
     else:
-        title = soup.title.text
-        content = soup.select('div#storytext')[0].text
-        audio_link = audio[0]['src']
-        article = Article(title, content, article_link, audio_link, soup)
+        title = soup.select('header h1.entry-title')
+        title = title[0].text if len(title) == 1 else ''
+
+        ps = soup.select('div.td-post-content p')
+        contents = []
+        for idx, p in enumerate(ps):
+            if idx < len(ps) - 1:
+                contents.append(p.text)
+        
+        video_link = video[0]['src']
+        article = Article(title, ' '.join(contents), article_link, video_link, soup)
 
     return article
 
 def save_article(article, output_dir):
-    audio_fname = article.video_link.rsplit('/', 1)[-1]
+    audio_fname = '%s' % os.path.basename(article.video_link).split('?')[0]
     
-    # save article
+    # save article content
+    print('Save article: %s' % article.link)
     file = '%s/%s' % (output_dir, articles_fname)
     with open(file, 'a', encoding='utf-8') as writer:
         writer.write('%s %s %s\n' % (audio_fname, CONT_SEP, article.content))
@@ -57,24 +66,27 @@ def save_article(article, output_dir):
     file = '%s/%s' % (output_dir, links_fname)
     with open(file, 'a', encoding='utf-8') as writer:
         writer.write('%s\n' % article.link)
-        
+
     # download audio
-    r = requests.get(article.video_link)
-    audio_file = '%s/audio/%s' % (output_dir, audio_fname)
-    with open(audio_file, 'wb') as f:
-        f.write(r.content)
+    print('Download article video: %s' % article.video_link)
+    try:
+        youtube = pytube.YouTube(article.video_link)
+        video = youtube.streams.filter(only_audio=True).first()
+        video.download(output_path='%s/video' % output_dir, filename=audio_fname)
+    except Exception as e:
+        print('Error downloading video...', e)
 
 def get_articles_links(page):
     links = []
-    e_links = page.select('div.sectionteaser h2 a')
+    e_links = page.select('h3.td-module-title a')
     for e in e_links:
         links.append(e['href'].strip())
     return links
 
 def get_next_page(page):
-    next_page = page.select('span.next a')
+    next_page = page.select('div.page-nav a')
     if len(next_page) > 0:
-        return next_page[0]['href']
+        return next_page[-1]['href']
     else:
         return None
 
@@ -122,7 +134,7 @@ def run():
         module_dir = '%s/%s' % (out_dir, module)
         if not os.path.exists(module_dir):
             os.makedirs(module_dir)
-            os.makedirs('%s/audio' % module_dir)
+            os.makedirs('%s/video' % module_dir)
         
         # load crawled links
         link_file = '%s/%s' % (module_dir, links_fname)
@@ -156,21 +168,11 @@ def run():
 #####################
 
 modules = {
-    'social-economy': 'https://www.rfa.org/khmer/news/social-economy/story_archive',
-    # 'economy': 'https://www.rfa.org/khmer/news/economy/story_archive',
-    # 'human-rights': 'https://www.rfa.org/khmer/news/human-rights/story_archive',
-    # 'environment': 'https://www.rfa.org/khmer/news/environment',
-    # 'health': 'https://www.rfa.org/khmer/news/health',
-    # 'history': 'https://www.rfa.org/khmer/news/history/story_archive',
-    # 'law': 'https://www.rfa.org/khmer/news/law/story_archive',
-    # 'krt': 'https://www.rfa.org/khmer/news/krt/story_archive',
-    # 'politics': 'https://www.rfa.org/khmer/news/politics/story_archive',
-    # 'analysis': 'https://www.rfa.org/khmer/news/analysis/story_archive',
-    # 'land': 'https://www.rfa.org/khmer/news/land/story_archive'
+    'news': 'https://www.cambodiadaily.com/category/news/'
 }
 
-out_dir         = 'work/raw/rfa'
-total_articles  = -1
+out_dir         = 'work/speech/raw/cambodiadaily'
+total_articles  = 100
 line_break      = ' '
 link_map        = {}
 articles_fname  = 'articles.txt'
@@ -178,4 +180,4 @@ links_fname     = 'links.txt'
 
 if __name__ == '__main__':
     run()
-    # extract_article('https://www.rfa.org/khmer/news/politics/7th-protest-of-families-of-jailed-cnrp-activists-07312020185537.html')
+
